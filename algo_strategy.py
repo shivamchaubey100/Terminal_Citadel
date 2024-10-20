@@ -27,6 +27,7 @@ class AlgoStrategy(gamelib.AlgoCore):
         random.seed(seed)
         gamelib.debug_write('Random seed: {}'.format(seed))
         self.scored_on_regions = [False, False, False, False, False, False]
+        self.Structs = Structures()
         
 
     def on_game_start(self, config):
@@ -35,7 +36,7 @@ class AlgoStrategy(gamelib.AlgoCore):
         """
         gamelib.debug_write('Configuring your custom algo strategy...')
         self.config = config
-        global WALL, SUPPORT, TURRET, SCOUT, DEMOLISHER, INTERCEPTOR, MP, SP
+        global WALL, SUPPORT, TURRET, SCOUT, DEMOLISHER, INTERCEPTOR, MP, SP, UPDATE
         WALL = config["unitInformation"][0]["shorthand"]
         SUPPORT = config["unitInformation"][1]["shorthand"]
         TURRET = config["unitInformation"][2]["shorthand"]
@@ -44,6 +45,7 @@ class AlgoStrategy(gamelib.AlgoCore):
         INTERCEPTOR = config["unitInformation"][5]["shorthand"]
         MP = 1
         SP = 0
+        UPDATE = 'update'
         # This is a good place to do initial setup
         self.scored_on_locations = []
         # self.scored_on_regions = [False, False, False, False, False, False]
@@ -53,8 +55,9 @@ class AlgoStrategy(gamelib.AlgoCore):
         self.RIGHT_MID=3
         self.LEFT_LOW = 4
         self.RIGHT_LOW = 5
-
+        self.numWalls = 0
         self.first_wall = True
+        self.prevWallCount = 0
 
     def on_turn(self, turn_state):
         """
@@ -64,20 +67,31 @@ class AlgoStrategy(gamelib.AlgoCore):
         unit deployments, and transmitting your intended deployments to the
         game engine.
         """
+
+        self.wallQueue.clear()
+        self.numWallsBuild = 0
         self.wall_remove = False
         game_state = gamelib.GameState(self.config, turn_state)
         gamelib.debug_write('Performing turn {} of your custom algo strategy'.format(game_state.turn_number))
         game_state.suppress_warnings(True)  #Comment or remove this line to enable warnings.
-
+        
+        self.PreStratCheck(game_state)
+        
         self.starter_strategy(game_state)
+        self.Structs.BuildStructures(game_state)
 
         game_state.submit_turn()
+    
+    def PreStratCheck(self, game_state):
+        currWallCount = self.CountWalls(game_state)
+        if(self.prevWallCount - currWallCount > 5):
+            self.Structs.setWallLimit(5)
+        else:
+            self.Structs.setWallLimit(2)
+        self.prevWallCount = currWallCount
 
+        
 
-    """
-    NOTE: All the methods after this point are part of the sample starter-algo
-    strategy and can safely be replaced for your custom algo.
-    """
 
     def starter_strategy(self, game_state):
         """
@@ -86,39 +100,18 @@ class AlgoStrategy(gamelib.AlgoCore):
         For offense we will use long range demolishers if they place stationary units near the enemy's front.
         If there are no stationary units to attack in the front, we will send Scouts to try and score quickly.
         """
+
         # first build reactive defenses based on where the enemy scored
         self.build_reactive_defense(game_state)
         # Now, place basic defenses
         self.build_defences(game_state)
         
 
-        # If the turn is less than 5, stall with interceptors and wait to see enemy's base
-        # if game_state.turn_number < 5:
-        #     self.stall_with_interceptors(game_state)
-        # else:
-            # # Now let's analyze the enemy base to see where their defenses are concentrated.
-            # # If they have many units in the front we can build a line for our demolishers to attack them at long range.
-            # else:
-            #     # They don't have many units in the front so lets figure out their least defended area and send Scouts there.
-
-            #     # Only spawn Scouts every other turn
-            #     # Sending more at once is better since attacks can only hit a single scout at a time
-            #     if game_state.turn_number % 2 == 1:
-            #         # To simplify we will just check sending them from back left and right
-            #         scout_spawn_location_options = [[13, 0], [14, 0]]
-            #         best_location = self.least_damage_spawn_location(game_state, scout_spawn_location_options)
-            #         game_state.attempt_spawn(SCOUT, best_location, 1000)
-
-            #     # Lastly, if we have spare SP, let's build some supports
-            #     support_locations = [[13, 2], [14, 2], [13, 3], [14, 3]]
-            #     game_state.attempt_spawn(SUPPORT, support_locations)
-        # if(game_state.get_resource(MP, 0) > 8):
-        #     self.stall_with_interceptors(game_state, 1)
-        if(self.detect_enemy_unit(game_state, None, None, [14,15]) > 20):
+        if(self.detect_enemy_unit(game_state, None, None, [14,15,16]) > 20):
             self.demolisher_line_strategy(game_state)
         elif self.detect_enemy_unit(game_state, unit_type=None, valid_x=None, valid_y=[14, 15]) > 25:
             self.demolisher_line_strategy(game_state)
-        if(game_state.get_resource(MP,1) > 10):
+        if(game_state.get_resource(MP,1) > 15):
             self.stall_with_interceptors(game_state, 2)
         if(game_state.get_resource(MP, 0) > 10):
             scout_spawn_location_options = [[7,6], [10, 3], [13, 0], [16,2], [20,6]]
@@ -139,94 +132,115 @@ class AlgoStrategy(gamelib.AlgoCore):
         turret_locations = [[4,11], [23,11]]
         
         # attempt_spawn will try to spawn units if we have resources, and will check if a blocking unit is already there
-        game_state.attempt_spawn(TURRET, turret_locations)
+        self.Structs.AddToBuildQueue(game_state, turret_locations, TURRET)
 
         # upgrade turrets so they soak more damage
-        game_state.attempt_upgrade(turret_locations)
+        # game_state.attempt_upgrade(turret_locations)
+        self.Structs.AddToBuildQueue(game_state, turret_locations, UPDATE)
 
         # Place walls in front of turrets to soak up damage for them
         wall_locations = [[1,12],[3,12],[5,12],[26,12],[24,12],[22,12]]
-        game_state.attempt_spawn(WALL, wall_locations)
-
+        # game_state.attempt_spawn(WALL, wall_locations)
+        self.Structs.AddToBuildQueue(game_state, wall_locations, WALL)
         if self.first_wall:
             wall_locations = [[0,13],[2,13],[4,13],[6,13],[27,13],[25,13],[23,13],[21,13]]
-            game_state.attempt_spawn(WALL, wall_locations)  
+            # game_state.attempt_spawn(WALL, wall_locations)
+            self.Structs.AddToBuildQueue(game_state, wall_locations, WALL)  
         #Priority 2:
 
         # Place walls in front of turrets to soak up damage for them
         wall_locations = [[12,11],[12,12],[13,12],[14,12],[15,12],[15,11]]
-        game_state.attempt_spawn(WALL, wall_locations)
+        # game_state.attempt_spawn(WALL, wall_locations)
+        self.Structs.AddToBuildQueue(game_state, wall_locations, WALL)
 
         # Place turrets that attack enemy units
         turret_locations = [[13,11]]
         # attempt_spawn will try to spawn units if we have resources, and will check if a blocking unit is already there
-        game_state.attempt_spawn(TURRET, turret_locations)
+        self.Structs.AddToBuildQueue(game_state, turret_locations, TURRET)
         # upgrade turrets so they soak more damage
-        game_state.attempt_upgrade(turret_locations)
+        # game_state.attempt_upgrade(turret_locations)
+        self.Structs.AddToBuildQueue(game_state, turret_locations, UPDATE)
 
         # Place turrets that attack enemy units
         turret_locations = [[14,11]]
         # attempt_spawn will try to spawn units if we have resources, and will check if a blocking unit is already there
-        game_state.attempt_spawn(TURRET, turret_locations)
+        self.Structs.AddToBuildQueue(game_state, turret_locations, TURRET)
         # upgrade turrets so they soak more damage
-        game_state.attempt_upgrade(turret_locations)
+        # game_state.attempt_upgrade(turret_locations)
+        self.Structs.AddToBuildQueue(game_state, turret_locations, UPDATE)
         
         #Priority 3:
         #first layer Supports 
         support_locations = [[13,10]]
-        game_state.attempt_spawn(SUPPORT, support_locations)
-        game_state.attempt_upgrade(support_locations)
+        # game_state.attempt_spawn(SUPPORT, support_locations)
+        self.Structs.AddToBuildQueue(game_state, support_locations, SUPPORT)
+        # game_state.attempt_upgrade(support_locations)
+        self.Structs.AddToBuildQueue(game_state, support_locations, UPDATE)
 
         support_locations = [[14,10]]
-        game_state.attempt_spawn(SUPPORT, support_locations)
-        game_state.attempt_upgrade(support_locations)
+        # game_state.attempt_spawn(SUPPORT, support_locations)
+        self.Structs.AddToBuildQueue(game_state, support_locations, SUPPORT)
+        # game_state.attempt_upgrade(support_locations)
+        self.Structs.AddToBuildQueue(game_state, support_locations, UPDATE)
       
         
         #turrets in the middle
         turret_locations = [[8,11]]
-        game_state.attempt_spawn(TURRET, turret_locations)
-        game_state.attempt_upgrade(turret_locations)
+        self.Structs.AddToBuildQueue(game_state, turret_locations, TURRET)
+        # game_state.attempt_upgrade(turret_locations)
+        self.Structs.AddToBuildQueue(game_state, turret_locations, UPDATE)
         
         turret_locations = [[19,11]]
-        game_state.attempt_spawn(TURRET, turret_locations)
-        game_state.attempt_upgrade(turret_locations)
+        self.Structs.AddToBuildQueue(game_state, turret_locations, TURRET)
+        # game_state.attempt_upgrade(turret_locations)
+        self.Structs.AddToBuildQueue(game_state, turret_locations, UPDATE)
 
         #second layer Supports
         support_locations = [[13,9]]
-        game_state.attempt_spawn(SUPPORT, support_locations)
-        game_state.attempt_upgrade(support_locations)
+        # game_state.attempt_spawn(SUPPORT, support_locations)
+        self.Structs.AddToBuildQueue(game_state, support_locations, SUPPORT)
+        # game_state.attempt_upgrade(support_locations)
+        self.Structs.AddToBuildQueue(game_state, support_locations, UPDATE)
         
         support_locations = [[14,9]]
-        game_state.attempt_spawn(SUPPORT, support_locations)
-        game_state.attempt_upgrade(support_locations)
+        # game_state.attempt_spawn(SUPPORT, support_locations)
+        self.Structs.AddToBuildQueue(game_state, support_locations, SUPPORT)
+        # game_state.attempt_upgrade(support_locations)
+        self.Structs.AddToBuildQueue(game_state, support_locations, SUPPORT)
         
         
     
-        # For sufficient SP>10
-        i=0
+        # For sufficient SP>10, build more defenses
         if(game_state.get_resource(SP, 0) > 10):
             
             turret_locations = [[10,6]]
-            game_state.attempt_spawn(TURRET, turret_locations)
-            game_state.attempt_upgrade(turret_locations)
+            self.Structs.AddToBuildQueue(game_state, turret_locations, TURRET)
+            # game_state.attempt_upgrade(turret_locations)
+            self.Structs.AddToBuildQueue(game_state, turret_locations, UPDATE)
             
             turret_locations = [[17,6]]
-            game_state.attempt_spawn(TURRET, turret_locations)
-            game_state.attempt_upgrade(turret_locations)
+            self.Structs.AddToBuildQueue(game_state, turret_locations, TURRET)
+            # game_state.attempt_upgrade(turret_locations)
+            self.Structs.AddToBuildQueue(game_state, turret_locations, UPDATE)
             
             support_locations = [[13,8]]
-            game_state.attempt_spawn(SUPPORT, support_locations)
-            game_state.attempt_upgrade(support_locations)
+            # game_state.attempt_spawn(SUPPORT, support_locations)
+            self.Structs.AddToBuildQueue(game_state, support_locations, SUPPORT)
+            # game_state.attempt_upgrade(support_locations)
+            self.Structs.AddToBuildQueue(game_state, support_locations, UPDATE)
             
             support_locations = [[14,8]]
-            game_state.attempt_spawn(SUPPORT, support_locations)
-            game_state.attempt_upgrade(support_locations)
+            # game_state.attempt_spawn(SUPPORT, support_locations)
+            self.Structs.AddToBuildQueue(game_state, support_locations, SUPPORT)
+            # game_state.attempt_upgrade(support_locations)
+            self.Structs.AddToBuildQueue(game_state, support_locations, UPDATE)
 
             wall_locations = [[12,10],[12,9],[15,10],[15,9]]
-            game_state.attempt_spawn(WALL, wall_locations)
+            # game_state.attempt_spawn(WALL, wall_locations)
+            self.Structs.AddToBuildQueue(game_state, wall_locations, WALL)
 
             wall_locations = [[0,13],[1,12],[2,13],[3,12],[4,13],[5,12],[6,13],[27,13],[26,12],[25,13],[24,12],[23,13],[22,12],[21,13]]
-            game_state.attempt_upgrade(wall_locations)
+            self.Structs.AddToBuildQueue(game_state, wall_locations, UPDATE)
 
     def build_reactive_defense(self, game_state):
         """
@@ -254,8 +268,8 @@ class AlgoStrategy(gamelib.AlgoCore):
         elif(self.scored_on_regions[self.RIGHT_HIGH]):
             turret_locations.append([25,12])
         for x in turret_locations:
-            game_state.attempt_spawn(TURRET, [x])
-            game_state.attempt_upgrade([x])
+            self.Structs.AddToBuildQueue(game_state, turret_locations, TURRET)
+            self.Structs.AddToBuildQueue(game_state, [x], UPDATE)
 
     def stall_with_interceptors(self, game_state, num_interceptors = 1):
         """
@@ -306,9 +320,9 @@ class AlgoStrategy(gamelib.AlgoCore):
         holes = self.get_holes(game_state)
         side = -1
         for hole in holes:
-            if(hole > 13 and side != 0):
+            if(hole > 12 and side != 0):
                 side = 1
-            elif (hole < 14 and side != 1):
+            elif (hole < 15 and side != 1):
                 side = 0
             else:
                 side = 2
@@ -316,6 +330,9 @@ class AlgoStrategy(gamelib.AlgoCore):
             game_state.attempt_spawn(DEMOLISHER, [24,10], 2)
         elif(side == 1):
             game_state.attempt_spawn(DEMOLISHER, [3,10], 2)
+        elif(side == -1):
+            game_state.attempt_spawn(DEMOLISHER, [24,10], 2)
+
             
     def least_damage_spawn_location(self, game_state, location_options):
         """
@@ -407,6 +424,44 @@ class AlgoStrategy(gamelib.AlgoCore):
                     self.scored_on_regions[self.RIGHT_HIGH] = True
 
                 gamelib.debug_write("All locations: {}".format(self.scored_on_locations))
+
+class Structures():
+    def __init__(self):
+        self.prevWalls = 0
+        self.wallQueue = []
+        self.structQueue = []
+        self.UpdateQueue = []
+        self.wallLimit = -1
+
+    def CountWalls(self, game_state):
+        wallCount = 0
+        for y in range(14):
+            for x in range(28):
+                if game_state.game_map.in_arena_bounds([x,y]):
+                    for unit in game_state.game_map[x,y]:
+                        if(unit.type == WALL):
+                            wallCount+=1
+        return wallCount
+    
+    def setWallLimit(self, limit):
+        self.wallLimit = limit
+
+    def AddToBuildQueue(self, game_state, locations, type):
+        if(type == WALL):
+            self.wallQueue.extend(locations)
+        else:
+            self.structQueue.extend([(loc, type) for loc in locations])
+
+    def BuildStructures(self, game_state):
+        wallcount = 0
+        while(wallcount < self.wallLimit and wallcount < len(self.wallQueue)):
+            game_state.attempt_spawn(WALL, self.wallQueue[wallcount])
+        for loc,type in self.structQueue:
+            if(type == UPDATE):
+                game_state.attempt_upgrade(loc)
+            else:
+                game_state.attempt_spawn(type,loc)
+
 
 
 if __name__ == "__main__":
