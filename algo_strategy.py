@@ -200,12 +200,11 @@ class AlgoStrategy(gamelib.AlgoCore):
         game_state.attempt_spawn(SUPPORT, support_locations)
         game_state.attempt_upgrade(support_locations)
         
-        wall_locations = [[12,10],[12,9],[15,10],[15,9]]
-        game_state.attempt_spawn(WALL, wall_locations)
+        
     
         # For sufficient SP>10
         i=0
-        while(game_state.get_resource(SP, 0) > 10):
+        if(game_state.get_resource(SP, 0) > 10):
             
             turret_locations = [[10,6]]
             game_state.attempt_spawn(TURRET, turret_locations)
@@ -215,15 +214,16 @@ class AlgoStrategy(gamelib.AlgoCore):
             game_state.attempt_spawn(TURRET, turret_locations)
             game_state.attempt_upgrade(turret_locations)
             
-            support_locations = [[13,8-i]]
+            support_locations = [[13,8]]
             game_state.attempt_spawn(SUPPORT, support_locations)
             game_state.attempt_upgrade(support_locations)
             
-            support_locations = [[14,8-i]]
+            support_locations = [[14,8]]
             game_state.attempt_spawn(SUPPORT, support_locations)
             game_state.attempt_upgrade(support_locations)
 
-            i= i+1
+            wall_locations = [[12,10],[12,9],[15,10],[15,9]]
+            game_state.attempt_spawn(WALL, wall_locations)
 
             wall_locations = [[0,13],[1,12],[2,13],[3,12],[4,13],[5,12],[6,13],[27,13],[26,12],[25,13],[24,12],[23,13],[22,12],[21,13]]
             game_state.attempt_upgrade(wall_locations)
