@@ -92,24 +92,30 @@ class AlgoStrategy(gamelib.AlgoCore):
         if game_state.turn_number < 5:
             self.stall_with_interceptors(game_state)
         else:
-            # Now let's analyze the enemy base to see where their defenses are concentrated.
-            # If they have many units in the front we can build a line for our demolishers to attack them at long range.
-            if self.detect_enemy_unit(game_state, unit_type=None, valid_x=None, valid_y=[14, 15]) > 10:
-                self.demolisher_line_strategy(game_state)
-            else:
-                # They don't have many units in the front so lets figure out their least defended area and send Scouts there.
+            # # Now let's analyze the enemy base to see where their defenses are concentrated.
+            # # If they have many units in the front we can build a line for our demolishers to attack them at long range.
+            # if self.detect_enemy_unit(game_state, unit_type=None, valid_x=None, valid_y=[14, 15]) > 10:
+            #     self.demolisher_line_strategy(game_state)
+            # else:
+            #     # They don't have many units in the front so lets figure out their least defended area and send Scouts there.
 
-                # Only spawn Scouts every other turn
-                # Sending more at once is better since attacks can only hit a single scout at a time
-                if game_state.turn_number % 2 == 1:
-                    # To simplify we will just check sending them from back left and right
-                    scout_spawn_location_options = [[13, 0], [14, 0]]
-                    best_location = self.least_damage_spawn_location(game_state, scout_spawn_location_options)
-                    game_state.attempt_spawn(SCOUT, best_location, 1000)
+            #     # Only spawn Scouts every other turn
+            #     # Sending more at once is better since attacks can only hit a single scout at a time
+            #     if game_state.turn_number % 2 == 1:
+            #         # To simplify we will just check sending them from back left and right
+            #         scout_spawn_location_options = [[13, 0], [14, 0]]
+            #         best_location = self.least_damage_spawn_location(game_state, scout_spawn_location_options)
+            #         game_state.attempt_spawn(SCOUT, best_location, 1000)
 
-                # Lastly, if we have spare SP, let's build some supports
-                support_locations = [[13, 2], [14, 2], [13, 3], [14, 3]]
-                game_state.attempt_spawn(SUPPORT, support_locations)
+            #     # Lastly, if we have spare SP, let's build some supports
+            #     support_locations = [[13, 2], [14, 2], [13, 3], [14, 3]]
+            #     game_state.attempt_spawn(SUPPORT, support_locations)
+            if(game_state.get_resource(MP, 0) > 8):
+                self.stall_with_interceptors(game_state, 1)
+            if(game_state.get_resource(MP, 0) > 10):
+                while(game_state.get_resource(MP, 0) > 1):
+                    game_state.attempt_spawn(SCOUT, [13,0],1)
+            
 
     def build_defences(self, game_state):
         """
