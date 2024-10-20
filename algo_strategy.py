@@ -25,6 +25,8 @@ class AlgoStrategy(gamelib.AlgoCore):
         seed = random.randrange(maxsize)
         random.seed(seed)
         gamelib.debug_write('Random seed: {}'.format(seed))
+        self.scored_on_regions = [False, False, False, False, False, False]
+        
 
     def on_game_start(self, config):
         """ 
@@ -43,6 +45,13 @@ class AlgoStrategy(gamelib.AlgoCore):
         SP = 0
         # This is a good place to do initial setup
         self.scored_on_locations = []
+        # self.scored_on_regions = [False, False, False, False, False, False]
+        self.LEFT_HIGH = 0
+        self.RIGHT_HIGH = 1
+        self.LEFT_MID=2
+        self.RIGHT_MID=3
+        self.LEFT_LOW = 4
+        self.RIGHT_LOW = 5
 
     def on_turn(self, turn_state):
         """
@@ -73,10 +82,11 @@ class AlgoStrategy(gamelib.AlgoCore):
         For offense we will use long range demolishers if they place stationary units near the enemy's front.
         If there are no stationary units to attack in the front, we will send Scouts to try and score quickly.
         """
-        # First, place basic defenses
-        self.build_defences(game_state)
-        # Now build reactive defenses based on where the enemy scored
+        # first build reactive defenses based on where the enemy scored
         self.build_reactive_defense(game_state)
+        # Now, place basic defenses
+        self.build_defences(game_state)
+        
 
         # If the turn is less than 5, stall with interceptors and wait to see enemy's base
         if game_state.turn_number < 5:
@@ -109,16 +119,62 @@ class AlgoStrategy(gamelib.AlgoCore):
         # Useful tool for setting up your base locations: https://www.kevinbai.design/terminal-map-maker
         # More community tools available at: https://terminal.c1games.com/rules#Download
 
+        #Priority 1:
+
         # Place turrets that attack enemy units
-        turret_locations = [[0, 13], [27, 13], [8, 11], [19, 11], [13, 11], [14, 11]]
+        turret_locations = [[4,11], [23,11]]
+        
         # attempt_spawn will try to spawn units if we have resources, and will check if a blocking unit is already there
         game_state.attempt_spawn(TURRET, turret_locations)
+
+        # upgrade turrets so they soak more damage
+        game_state.attempt_upgrade(turret_locations)
+
         
         # Place walls in front of turrets to soak up damage for them
-        wall_locations = [[8, 12], [19, 12]]
+        wall_locations = [[0,13],[1,12],[2,13],[3,12],[4,13],[5,12],[6,13],[27,13],[26,12],[25,13],[24,12],[23,13],[22,12],[21,13]]
         game_state.attempt_spawn(WALL, wall_locations)
-        # upgrade walls so they soak more damage
-        game_state.attempt_upgrade(wall_locations)
+
+        #Priority 2:
+
+        # Place walls in front of turrets to soak up damage for them
+        wall_locations = [[12,11],[12,12],[13,13],[14,13],[15,12],[15,11]]
+        game_state.attempt_spawn(WALL, wall_locations)
+
+        # Place turrets that attack enemy units
+        turret_locations = [[13,11]]
+        # attempt_spawn will try to spawn units if we have resources, and will check if a blocking unit is already there
+        game_state.attempt_spawn(TURRET, turret_locations)
+        # upgrade turrets so they soak more damage
+        game_state.attempt_upgrade(turret_locations)
+
+        # Place turrets that attack enemy units
+        turret_locations = [[14,11]]
+        # attempt_spawn will try to spawn units if we have resources, and will check if a blocking unit is already there
+        game_state.attempt_spawn(TURRET, turret_locations)
+        # upgrade turrets so they soak more damage
+        game_state.attempt_upgrade(turret_locations)
+        
+        #Priority 3:
+        #Supports
+        for i in range(0, 2):
+            support_locations = [[13,10-i]]
+            game_state.attempt_spawn(SUPPORT, support_locations)
+            game_state.attempt_upgrade(support_locations)
+
+        for i in range(0, 2):
+            turret_locations = [[8 + 11*i,11]]
+            game_state.attempt_spawn(TURRET, turret_locations)
+            game_state.attempt_upgrade(turret_locations)
+
+
+        for i in range(0, 2):
+            support_locations = [[14,10-i]]
+            game_state.attempt_spawn(SUPPORT, support_locations)
+            game_state.attempt_upgrade(support_locations)
+        
+        wall_locations = [[12,10],[12,9],[15,10],[15,9]]
+        game_state.attempt_spawn(WALL, wall_locations)
 
     def build_reactive_defense(self, game_state):
         """
@@ -126,12 +182,30 @@ class AlgoStrategy(gamelib.AlgoCore):
         We can track where the opponent scored by looking at events in action frames 
         as shown in the on_action_frame function
         """
-        for location in self.scored_on_locations:
-            # Build turret one space above so that it doesn't block our own edge spawn locations
-            build_location = [location[0], location[1]+1]
-            game_state.attempt_spawn(TURRET, build_location)
+        # for location in self.scored_on_locations:
+        #     # Build turret one space above so that it doesn't block our own edge spawn locations
+        #     build_location = [location[0], location[1]+1]
+        #     game_state.attempt_spawn(TURRET, build_location)
 
-    def stall_with_interceptors(self, game_state):
+        #Build turrets where opponent last scored
+        turret_locations = []
+        if(self.scored_on_regions[self.LEFT_HIGH]):
+            turret_locations.append([2,12])
+        elif(self.scored_on_regions[self.LEFT_MID]):
+            turret_locations.append([7,8])
+        elif(self.scored_on_regions[self.LEFT_LOW]):
+            turret_locations.append([13,2])
+        elif(self.scored_on_regions[self.RIGHT_LOW]):
+            turret_locations.append([14,2])
+        elif(self.scored_on_regions[self.RIGHT_MID]):
+            turret_locations.append([20,8])
+        elif(self.scored_on_regions[self.RIGHT_HIGH]):
+            turret_locations.append([25,12])
+        for x in turret_locations:
+            game_state.attempt_spawn(TURRET, [x])
+            game_state.attempt_upgrade([x])
+
+    def stall_with_interceptors(self, game_state, num_interceptors = 1):
         """
         Send out interceptors at random locations to defend our base from enemy moving units.
         """
@@ -142,13 +216,16 @@ class AlgoStrategy(gamelib.AlgoCore):
         # since we can't deploy units there.
         deploy_locations = self.filter_blocked_locations(friendly_edges, game_state)
         
+        count = 0
+
         # While we have remaining MP to spend lets send out interceptors randomly.
-        while game_state.get_resource(MP) >= game_state.type_cost(INTERCEPTOR)[MP] and len(deploy_locations) > 0:
+        while game_state.get_resource(MP) >= game_state.type_cost(INTERCEPTOR)[MP] and len(deploy_locations) > 0 and count < num_interceptors:
             # Choose a random deploy location.
             deploy_index = random.randint(0, len(deploy_locations) - 1)
             deploy_location = deploy_locations[deploy_index]
             
             game_state.attempt_spawn(INTERCEPTOR, deploy_location)
+            count += 1
             """
             We don't have to remove the location since multiple mobile 
             units can occupy the same space.
@@ -222,6 +299,7 @@ class AlgoStrategy(gamelib.AlgoCore):
         state = json.loads(turn_string)
         events = state["events"]
         breaches = events["breach"]
+        self.scored_on_regions = [False, False, False, False, False, False]
         for breach in breaches:
             location = breach[0]
             unit_owner_self = True if breach[4] == 1 else False
@@ -230,6 +308,19 @@ class AlgoStrategy(gamelib.AlgoCore):
             if not unit_owner_self:
                 gamelib.debug_write("Got scored on at: {}".format(location))
                 self.scored_on_locations.append(location)
+                if( location[0] < 4):
+                    self.scored_on_regions[self.LEFT_HIGH] = True
+                elif(location[0] < 10):
+                    self.scored_on_regions[self.LEFT_MID] = True
+                elif(location[0] < 14):
+                    self.scored_on_regions[self.LEFT_LOW] = True
+                elif(location[0] < 18):
+                    self.scored_on_regions[self.RIGHT_LOW] = True
+                elif(location[0] < 24):
+                    self.scored_on_regions[self.RIGHT_MID] = True
+                elif(location[0] < 28):
+                    self.scored_on_regions[self.RIGHT_HIGH] = True
+
                 gamelib.debug_write("All locations: {}".format(self.scored_on_locations))
 
 
