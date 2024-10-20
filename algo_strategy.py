@@ -64,6 +64,7 @@ class AlgoStrategy(gamelib.AlgoCore):
         unit deployments, and transmitting your intended deployments to the
         game engine.
         """
+        self.wall_remove = False
         game_state = gamelib.GameState(self.config, turn_state)
         gamelib.debug_write('Performing turn {} of your custom algo strategy'.format(game_state.turn_number))
         game_state.suppress_warnings(True)  #Comment or remove this line to enable warnings.
@@ -117,7 +118,8 @@ class AlgoStrategy(gamelib.AlgoCore):
             self.demolisher_line_strategy(game_state)
         elif self.detect_enemy_unit(game_state, unit_type=None, valid_x=None, valid_y=[14, 15]) > 25:
             self.demolisher_line_strategy(game_state)
-        
+        if(game_state.get_resource(MP,1) > 10):
+            self.stall_with_interceptors(game_state, 2)
         if(game_state.get_resource(MP, 0) > 10):
             scout_spawn_location_options = [[7,6], [10, 3], [13, 0], [16,2], [20,6]]
             best_location = self.least_damage_spawn_location(game_state, scout_spawn_location_options)
@@ -355,7 +357,7 @@ class AlgoStrategy(gamelib.AlgoCore):
                     x = x[0]
                 else:
                     orig = x
-                if (GameMap.in_arena_bounds(x,valid_y[0]) and not game_state.contains_stationary_unit([x, valid_y[0]]) and not game_state.contains_stationary_unit([x, valid_y[0]+1]) ):
+                if (game_state.game_map.in_arena_bounds((x,valid_y[0])) and not game_state.contains_stationary_unit([x, valid_y[0]]) and not game_state.contains_stationary_unit([x, valid_y[0]+1]) ):
                     valid_x_new.add((x,orig))
                     valid_x_new.add((x-1,orig))
                     valid_x_new.add((x+1,orig))
