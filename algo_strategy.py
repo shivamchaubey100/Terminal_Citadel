@@ -136,7 +136,6 @@ class AlgoStrategy(gamelib.AlgoCore):
         # upgrade turrets so they soak more damage
         game_state.attempt_upgrade(turret_locations)
 
-        
         # Place walls in front of turrets to soak up damage for them
         wall_locations = [[0,13],[1,12],[2,13],[3,12],[4,13],[5,12],[6,13],[27,13],[26,12],[25,13],[24,12],[23,13],[22,12],[21,13]]
         game_state.attempt_spawn(WALL, wall_locations)
