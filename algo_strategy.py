@@ -58,6 +58,9 @@ class AlgoStrategy(gamelib.AlgoCore):
         self.numWallsBuild = 0
         self.first_wall = True
         self.prevWallCount = 0
+        self.scoutsSent = False
+        self.sendDemolisher = False
+        self.we_scored = False
 
     def on_turn(self, turn_state):
         """
@@ -77,7 +80,6 @@ class AlgoStrategy(gamelib.AlgoCore):
         self.PreStratCheck(game_state)
         
         self.starter_strategy(game_state)
-        self.Structs.BuildStructures(game_state)
 
         game_state.submit_turn()
     
@@ -94,6 +96,11 @@ class AlgoStrategy(gamelib.AlgoCore):
         last_node = game_state.find_path_to_edge([13,0], None)[-1]
         self.canReachEdge = (last_node[0] + last_node[1] == 41) or (last_node[1] - last_node[0] == 14)
 
+        #check opponent damage
+        if(self.scoutsSent and not self.we_scored):
+            self.sendDemolisher = True
+
+
 
 
 
@@ -109,6 +116,7 @@ class AlgoStrategy(gamelib.AlgoCore):
         self.build_reactive_defense(game_state)
         # Now, place basic defenses
         self.build_defences(game_state)
+        self.Structs.BuildStructures(game_state)
 
         round = game_state.turn_number
         rand = random.randint(0,10)
@@ -123,16 +131,21 @@ class AlgoStrategy(gamelib.AlgoCore):
         if(self.checkSendInterceptor(game_state) and self.canReachEdge):
             gamelib.debug_write("HIGH RESOURCES: Interceptor")
             self.stall_with_interceptors(game_state, 2)
-        if(game_state.get_resource(MP, 0) > 10 and self.canReachEdge):
+        if(game_state.get_resource(MP, 0) > 10 and self.canReachEdge and not self.sendDemolisher):
             gamelib.debug_write("PATHS FOUND: SCOUT")
+            self.scoutsSent = True
             scout_spawn_location_options = [[7,6], [10, 3], [13, 0], [16,2], [20,6]]
             best_location = self.least_damage_spawn_location(game_state, scout_spawn_location_options)
             game_state.attempt_spawn(SCOUT, best_location, 100)
-        if(not self.canReachEdge and round%2 == rand):
+        if((not self.canReachEdge and round%2 == rand) or self.sendDemolisher):
             gamelib.debug_write("PATH NOT REACHED: Demolisher")
             demolisher_spawn_locations = [[7,6], [10, 3], [13, 0], [16,2], [20,6]]
             best_location = self.least_damage_spawn_location(game_state, demolisher_spawn_locations)
             game_state.attempt_spawn(DEMOLISHER, best_location ,100)
+            self.sendDemolisher = False
+        if(game_state.get_resource(SP,0) >= 20):
+            self.build_extra_defences()
+        self.Structs.BuildStructures()
 
 
     ## TODO: IMPLEMENT BETTER CONDITIONS
@@ -277,7 +290,10 @@ class AlgoStrategy(gamelib.AlgoCore):
         #Build turrets where opponent last scored
         turret_locations = []
         if(self.scored_on_regions[self.LEFT_HIGH]):
-            turret_locations.append([2,12])
+            if(not self.detect_friendly_unit(game_state, TURRET, [2], [12])):
+                turret_locations.append([2,12])
+            else:
+                turret_locations.append([1,13])
         elif(self.scored_on_regions[self.LEFT_MID]):
             turret_locations.append([7,8])
         elif(self.scored_on_regions[self.LEFT_LOW]):
@@ -287,10 +303,30 @@ class AlgoStrategy(gamelib.AlgoCore):
         elif(self.scored_on_regions[self.RIGHT_MID]):
             turret_locations.append([20,8])
         elif(self.scored_on_regions[self.RIGHT_HIGH]):
-            turret_locations.append([25,12])
+            if(not self.detect_friendly_unit(game_state, TURRET, [25], [12])):
+                turret_locations.append([25,12])
+            else:
+                turret_locations.append([26,13])
         for x in turret_locations:
             self.Structs.AddToBuildQueue(game_state, turret_locations, TURRET)
             self.Structs.AddToBuildQueue(game_state, [x], UPDATE)
+
+    def build_extra_defences(self, game_state):
+        turret_locations = [[2,12],[25,12]]
+        support_locations = [[13,7],[14,7],[13,6],[14,6],[13,5],[14,5]]
+
+        for t in turret_locations:
+            self.Structs.AddToBuildQueue(game_state, t, TURRET)
+            self.Structs.AddToBuildQueue(game_state, t, UPDATE)
+        
+        for s in support_locations:
+            self.Structs.AddToBuildQueue(game_state, t, SUPPORT)
+            self.Structs.AddToBuildQueue(game_state, s, UPDATE) 
+        
+        turret_locations = [[3,13],[24,13],[6,9],[21,9],[13,4],[14,4]]
+        for t in turret_locations:
+            self.Structs.AddToBuildQueue(game_state, t, TURRET)
+            self.Structs.AddToBuildQueue(game_state, t, UPDATE)
 
     def stall_with_interceptors(self, game_state, num_interceptors = 1):
         """
@@ -356,7 +392,6 @@ class AlgoStrategy(gamelib.AlgoCore):
             game_state.attempt_spawn(DEMOLISHER, [3,10], num_dem)
         elif(side == -1):
             game_state.attempt_spawn(DEMOLISHER, [24,10], num_dem)
-
             
     def least_damage_spawn_location(self, game_state, location_options):
         """
@@ -379,11 +414,18 @@ class AlgoStrategy(gamelib.AlgoCore):
 
     def detect_enemy_unit(self, game_state, unit_type=None, valid_x = None, valid_y = None):
         total_units = 0
-        holes = []
         for location in game_state.game_map:
             if game_state.contains_stationary_unit(location):
                 for unit in game_state.game_map[location]:
                     if unit.player_index == 1 and (unit_type is None or unit.unit_type == unit_type) and (valid_x is None or location[0] in valid_x) and (valid_y is None or location[1] in valid_y):
+                        total_units += 1
+        return total_units
+    def detect_friendly_unit(self, game_state, unit_type=None, valid_x = None, valid_y = None):
+        total_units = 0
+        for location in game_state.game_map:
+            if game_state.contains_stationary_unit(location):
+                for unit in game_state.game_map[location]:
+                    if unit.player_index == 0 and (unit_type is None or unit.unit_type == unit_type) and (valid_x is None or location[0] in valid_x) and (valid_y is None or location[1] in valid_y):
                         total_units += 1
         return total_units
 
@@ -405,8 +447,7 @@ class AlgoStrategy(gamelib.AlgoCore):
             valid_x = valid_x_new
             valid_x_new = set()
         return [x[1] for x in valid_x]
-
-        
+   
     def filter_blocked_locations(self, locations, game_state):
         filtered = []
         for location in locations:
@@ -426,6 +467,7 @@ class AlgoStrategy(gamelib.AlgoCore):
         events = state["events"]
         breaches = events["breach"]
         self.scored_on_regions = [False, False, False, False, False, False]
+        self.we_scored = False
         for breach in breaches:
             location = breach[0]
             unit_owner_self = True if breach[4] == 1 else False
@@ -446,6 +488,8 @@ class AlgoStrategy(gamelib.AlgoCore):
                     self.scored_on_regions[self.RIGHT_MID] = True
                 elif(location[0] < 28):
                     self.scored_on_regions[self.RIGHT_HIGH] = True
+            elif unit_owner_self:
+                self.we_scored = True
 
                 gamelib.debug_write("All locations: {}".format(self.scored_on_locations))
 
