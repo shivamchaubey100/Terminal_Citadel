@@ -85,6 +85,7 @@ class AlgoStrategy(gamelib.AlgoCore):
     
     def PreStratCheck(self, game_state):
         currWallCount = self.Structs.CountWalls(game_state)
+        self.sendDemolisher = False
         if(self.numWallsBuild - currWallCount > 5):
             self.Structs.setWallLimit(5)
         else:
@@ -97,7 +98,7 @@ class AlgoStrategy(gamelib.AlgoCore):
         self.canReachEdge = (last_node[0] + last_node[1] == 41) or (last_node[1] - last_node[0] == 14)
 
         #check opponent damage
-        if(self.scoutsSent and not self.we_scored):
+        if(self.scoutsSent and not self.we_scored and game_state.turn_number >= 10):
             self.sendDemolisher = True
 
 
@@ -111,6 +112,7 @@ class AlgoStrategy(gamelib.AlgoCore):
         For offense we will use long range demolishers if they place stationary units near the enemy's front.
         If there are no stationary units to attack in the front, we will send Scouts to try and score quickly.
         """
+        
 
         # first build reactive defenses based on where the enemy scored
         self.build_reactive_defense(game_state)
@@ -121,6 +123,7 @@ class AlgoStrategy(gamelib.AlgoCore):
         round = game_state.turn_number
         rand = random.randint(0,10)
         
+        self.scoutsSent = False
 
         if(self.detect_enemy_unit(game_state, None, None, [14,15,16]) > 20 and round%3 == rand):
             gamelib.debug_write("WALL DETECTED: Demolisher")
@@ -145,7 +148,7 @@ class AlgoStrategy(gamelib.AlgoCore):
             self.sendDemolisher = False
         if(game_state.get_resource(SP,0) >= 20):
             self.build_extra_defences()
-        self.Structs.BuildStructures()
+        self.Structs.BuildStructures(game_state)
 
 
     ## TODO: IMPLEMENT BETTER CONDITIONS
