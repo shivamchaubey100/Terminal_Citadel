@@ -55,7 +55,7 @@ class AlgoStrategy(gamelib.AlgoCore):
         self.RIGHT_MID=3
         self.LEFT_LOW = 4
         self.RIGHT_LOW = 5
-        self.numWalls = 0
+        self.numWallsBuild = 0
         self.first_wall = True
         self.prevWallCount = 0
 
@@ -67,14 +67,13 @@ class AlgoStrategy(gamelib.AlgoCore):
         unit deployments, and transmitting your intended deployments to the
         game engine.
         """
-
-        self.wallQueue.clear()
         self.numWallsBuild = 0
         self.wall_remove = False
         game_state = gamelib.GameState(self.config, turn_state)
         gamelib.debug_write('Performing turn {} of your custom algo strategy'.format(game_state.turn_number))
         game_state.suppress_warnings(True)  #Comment or remove this line to enable warnings.
-        
+        self.canReachEdge = False
+
         self.PreStratCheck(game_state)
         
         self.starter_strategy(game_state)
@@ -83,14 +82,19 @@ class AlgoStrategy(gamelib.AlgoCore):
         game_state.submit_turn()
     
     def PreStratCheck(self, game_state):
-        currWallCount = self.CountWalls(game_state)
-        if(self.prevWallCount - currWallCount > 5):
+        currWallCount = self.Structs.CountWalls(game_state)
+        if(self.numWallsBuild - currWallCount > 5):
             self.Structs.setWallLimit(5)
         else:
             self.Structs.setWallLimit(2)
-        self.prevWallCount = currWallCount
+        if(game_state.turn_number <= 2 ):
+            self.Structs.setWallLimit(10)
+        self.numWallsBuild = currWallCount
 
-        
+        last_node = game_state.find_path_to_edge([13,0], None)[-1]
+        self.canReachEdge = (last_node[0] + last_node[1] == 41) or (last_node[1] - last_node[0] == 14)
+
+
 
 
     def starter_strategy(self, game_state):
@@ -105,18 +109,35 @@ class AlgoStrategy(gamelib.AlgoCore):
         self.build_reactive_defense(game_state)
         # Now, place basic defenses
         self.build_defences(game_state)
+
+        round = game_state.turn_number
+        rand = random.randint(0,10)
         
 
-        if(self.detect_enemy_unit(game_state, None, None, [14,15,16]) > 20):
+        if(self.detect_enemy_unit(game_state, None, None, [14,15,16]) > 20 and round%3 == rand):
+            gamelib.debug_write("WALL DETECTED: Demolisher")
             self.demolisher_line_strategy(game_state)
-        elif self.detect_enemy_unit(game_state, unit_type=None, valid_x=None, valid_y=[14, 15]) > 25:
+        elif self.detect_enemy_unit(game_state, unit_type=None, valid_x=None, valid_y=[14, 15]) > 25 and round%3 == rand:
+            gamelib.debug_write("BLOCK DETECTED: Demolisher")
             self.demolisher_line_strategy(game_state)
-        if(game_state.get_resource(MP,1) > 15):
+        if(self.checkSendInterceptor(game_state) and self.canReachEdge):
+            gamelib.debug_write("HIGH RESOURCES: Interceptor")
             self.stall_with_interceptors(game_state, 2)
-        if(game_state.get_resource(MP, 0) > 10):
+        if(game_state.get_resource(MP, 0) > 10 and self.canReachEdge):
+            gamelib.debug_write("PATHS FOUND: SCOUT")
             scout_spawn_location_options = [[7,6], [10, 3], [13, 0], [16,2], [20,6]]
             best_location = self.least_damage_spawn_location(game_state, scout_spawn_location_options)
-            game_state.attempt_spawn(SCOUT, [13,0],100)
+            game_state.attempt_spawn(SCOUT, best_location, 100)
+        if(not self.canReachEdge and round%2 == rand):
+            gamelib.debug_write("PATH NOT REACHED: Demolisher")
+            demolisher_spawn_locations = [[7,6], [10, 3], [13, 0], [16,2], [20,6]]
+            best_location = self.least_damage_spawn_location(game_state, demolisher_spawn_locations)
+            game_state.attempt_spawn(DEMOLISHER, best_location ,100)
+
+
+    ## TODO: IMPLEMENT BETTER CONDITIONS
+    def checkSendInterceptor(self, game_state):
+        return game_state.get_resource(MP,1) > 15
 
     def build_defences(self, game_state):
         """
@@ -276,8 +297,8 @@ class AlgoStrategy(gamelib.AlgoCore):
         Send out interceptors at random locations to defend our base from enemy moving units.
         """
         # We can spawn moving units on our edges so a list of all our edge locations
-        friendly_edges = game_state.game_map.get_edge_locations(game_state.game_map.BOTTOM_LEFT) + game_state.game_map.get_edge_locations(game_state.game_map.BOTTOM_RIGHT)
-        
+        #friendly_edges = game_state.game_map.get_edge_locations(game_state.game_map.BOTTOM_LEFT) + game_state.game_map.get_edge_locations(game_state.game_map.BOTTOM_RIGHT)
+        friendly_edges = [[4,9], [23,9], [5,8], [22,8]]
         # Remove locations that are blocked by our own structures 
         # since we can't deploy units there.
         deploy_locations = self.filter_blocked_locations(friendly_edges, game_state)
@@ -317,6 +338,9 @@ class AlgoStrategy(gamelib.AlgoCore):
 
         # Now spawn demolishers next to the line
         # By asking attempt_spawn to spawn 1000 units, it will essentially spawn as many as we have resources for
+        mp = game_state.get_resource(MP,0)
+        num_dem = (4 if mp > 15 else 2)
+        
         holes = self.get_holes(game_state)
         side = -1
         for hole in holes:
@@ -327,11 +351,11 @@ class AlgoStrategy(gamelib.AlgoCore):
             else:
                 side = 2
         if(side == 0):
-            game_state.attempt_spawn(DEMOLISHER, [24,10], 2)
+            game_state.attempt_spawn(DEMOLISHER, [24,10], num_dem)
         elif(side == 1):
-            game_state.attempt_spawn(DEMOLISHER, [3,10], 2)
+            game_state.attempt_spawn(DEMOLISHER, [3,10], num_dem)
         elif(side == -1):
-            game_state.attempt_spawn(DEMOLISHER, [24,10], 2)
+            game_state.attempt_spawn(DEMOLISHER, [24,10], num_dem)
 
             
     def least_damage_spawn_location(self, game_state, location_options):
@@ -430,7 +454,6 @@ class Structures():
         self.prevWalls = 0
         self.wallQueue = []
         self.structQueue = []
-        self.UpdateQueue = []
         self.wallLimit = -1
 
     def CountWalls(self, game_state):
@@ -439,10 +462,14 @@ class Structures():
             for x in range(28):
                 if game_state.game_map.in_arena_bounds([x,y]):
                     for unit in game_state.game_map[x,y]:
-                        if(unit.type == WALL):
+                        if(unit.unit_type == WALL):
                             wallCount+=1
         return wallCount
     
+    def ResetTurn(self):
+        self.wallQueue=[]
+        self.structQueue=[]
+
     def setWallLimit(self, limit):
         self.wallLimit = limit
 
@@ -454,13 +481,22 @@ class Structures():
 
     def BuildStructures(self, game_state):
         wallcount = 0
+        wallQ = str(self.wallQueue)
+        strQ = str(self.structQueue) 
+        gamelib.debug_write("Wall Queue: " + wallQ)
+        gamelib.debug_write("Struct Queue" + strQ)
         while(wallcount < self.wallLimit and wallcount < len(self.wallQueue)):
-            game_state.attempt_spawn(WALL, self.wallQueue[wallcount])
+            if(not game_state.game_map[self.wallQueue[wallcount]]):
+                game_state.attempt_spawn(WALL, self.wallQueue[wallcount])
+            else:
+                self.wallLimit += 1
+            wallcount+=1
         for loc,type in self.structQueue:
             if(type == UPDATE):
                 game_state.attempt_upgrade(loc)
             else:
                 game_state.attempt_spawn(type,loc)
+        self.ResetTurn()
 
 
 
